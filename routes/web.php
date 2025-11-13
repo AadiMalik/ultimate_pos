@@ -233,6 +233,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/reset-mapping', [SellController::class, 'resetMapping']);
 
     Route::resource('pos', SellPosController::class);
+    Route::get('/pay-now/{transaction}', [SellPosController::class, 'payNow'])->name('pay.now');
+    Route::post('/elavon/webhook', [SellController::class, 'elavonWebhook'])->name('elavon.webhook');
 
     Route::resource('roles', RoleController::class);
 

@@ -63,6 +63,9 @@ use Stripe\Charge;
 use Stripe\Stripe;
 use Yajra\DataTables\Facades\DataTables;
 use App\Events\SellCreatedOrModified;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Http;
+use JmesPath\Env;
 
 class SellPosController extends Controller
 {
@@ -108,6 +111,22 @@ class SellPosController extends Controller
 
         $this->dummyPaymentLine = ['method' => 'cash', 'amount' => 0, 'note' => '', 'card_transaction_number' => '', 'card_number' => '', 'card_type' => '', 'card_holder_name' => '', 'card_month' => '', 'card_year' => '', 'card_security' => '', 'cheque_number' => '', 'bank_account_number' => '',
             'is_return' => 0, 'transaction_no' => ''];
+        $this->dummyPaymentLine = [
+            'method' => 'cash',
+            'amount' => 0,
+            'note' => '',
+            'card_transaction_number' => '',
+            'card_number' => '',
+            'card_type' => '',
+            'card_holder_name' => '',
+            'card_month' => '',
+            'card_year' => '',
+            'card_security' => '',
+            'cheque_number' => '',
+            'bank_account_number' => '',
+            'is_return' => 0,
+            'transaction_no' => ''
+        ];
     }
 
     /**
@@ -345,7 +364,8 @@ class SellPosController extends Controller
 
             if ($is_credit_limit_exeeded !== false) {
                 $credit_limit_amount = $this->transactionUtil->num_f($is_credit_limit_exeeded, true);
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => __('lang_v1.cutomer_credit_limit_exeeded', ['credit_limit' => $credit_limit_amount]),
                 ];
                 if (!$is_direct_sale) {
@@ -369,7 +389,8 @@ class SellPosController extends Controller
 
                 $user_id = $request->session()->get('user.id');
 
-                $discount = ['discount_type' => $input['discount_type'],
+                $discount = [
+                    'discount_type' => $input['discount_type'],
                     'discount_amount' => $input['discount_amount'],
                 ];
                 $invoice_total = $this->productUtil->calculateInvoiceTotal($input['products'], $input['tax_rate_id'], $discount);
@@ -428,20 +449,20 @@ class SellPosController extends Controller
                     $input['types_of_service_id'] = $request->input('types_of_service_id');
                     $price_group_id = !empty($request->input('types_of_service_price_group')) ? $request->input('types_of_service_price_group') : $price_group_id;
                     $input['packing_charge'] = !empty($request->input('packing_charge')) ?
-                    $this->transactionUtil->num_uf($request->input('packing_charge')) : 0;
+                        $this->transactionUtil->num_uf($request->input('packing_charge')) : 0;
                     $input['packing_charge_type'] = $request->input('packing_charge_type');
                     $input['service_custom_field_1'] = !empty($request->input('service_custom_field_1')) ?
-                    $request->input('service_custom_field_1') : null;
+                        $request->input('service_custom_field_1') : null;
                     $input['service_custom_field_2'] = !empty($request->input('service_custom_field_2')) ?
-                    $request->input('service_custom_field_2') : null;
+                        $request->input('service_custom_field_2') : null;
                     $input['service_custom_field_3'] = !empty($request->input('service_custom_field_3')) ?
-                    $request->input('service_custom_field_3') : null;
+                        $request->input('service_custom_field_3') : null;
                     $input['service_custom_field_4'] = !empty($request->input('service_custom_field_4')) ?
-                    $request->input('service_custom_field_4') : null;
+                        $request->input('service_custom_field_4') : null;
                     $input['service_custom_field_5'] = !empty($request->input('service_custom_field_5')) ?
-                    $request->input('service_custom_field_5') : null;
+                        $request->input('service_custom_field_5') : null;
                     $input['service_custom_field_6'] = !empty($request->input('service_custom_field_6')) ?
-                    $request->input('service_custom_field_6') : null;
+                        $request->input('service_custom_field_6') : null;
                 }
 
                 if ($request->input('additional_expense_value_1') != '') {
@@ -572,7 +593,8 @@ class SellPosController extends Controller
                     $business_details = $this->businessUtil->getDetails($business_id);
                     $pos_settings = empty($business_details->pos_settings) ? $this->businessUtil->defaultPosSettings() : json_decode($business_details->pos_settings, true);
 
-                    $business = ['id' => $business_id,
+                    $business = [
+                        'id' => $business_id,
                         'accounting_method' => $request->session()->get('business.accounting_method'),
                         'location_id' => $input['location_id'],
                         'pos_settings' => $pos_settings,
@@ -597,6 +619,31 @@ class SellPosController extends Controller
 
                 SellCreatedOrModified::dispatch($transaction);
 
+                if (!empty($transaction->contact->email)) {
+                    try {
+                        $invoice_url = $this->transactionUtil->getInvoiceUrl($transaction->id, $business_id);
+
+                        $elavon_link = null;
+
+                        // Only generate Elavon link if is_elavon_payment = 1
+                        if (!empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1) {
+                            $elavon_link = route('pay.now', ['transaction' => $transaction->id]);
+                            $transaction->payment_status = 'due'; // mark as due
+                            $transaction->save();
+                        }
+                        // Send invoice email
+                        Mail::send('emails.invoice', [
+                            'transaction' => $transaction,
+                            'invoice_url' => $invoice_url,
+                            'elavon_link' => $elavon_link
+                        ], function ($message) use ($transaction) {
+                            $message->to($transaction->contact->email)
+                                ->subject('Your Invoice #' . $transaction->invoice_no);
+                        });
+                    } catch (\Exception $e) {
+                        \Log::error('Invoice Email Send Failed: ' . $e->getMessage());
+                    }
+                }
                 if ($request->input('is_save_and_print') == 1) {
                     $url = $this->transactionUtil->getInvoiceUrl($transaction->id, $business_id);
 
@@ -638,7 +685,8 @@ class SellPosController extends Controller
                     $output['whatsapp_link'] = $whatsapp_link;
                 }
             } else {
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => trans('messages.something_went_wrong'),
                 ];
             }
@@ -654,7 +702,8 @@ class SellPosController extends Controller
                 $msg = $e->getMessage();
             }
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => $msg,
             ];
         }
@@ -695,6 +744,63 @@ class SellPosController extends Controller
         }
     }
 
+    public function payNow($transactionId)
+    {
+        $transaction = Transaction::findOrFail($transactionId);
+
+        $merchantId = env('ELAVON_MERCHANT_ID');
+        $userId = env('ELAVON_USER_ID');
+        $pin = env('ELAVON_PIN');
+        $amount = $transaction->final_total;
+        $invoice = $transaction->id;
+        $email = $transaction->contact->email;
+
+        return view('payments.elavon_form', compact(
+            'merchantId',
+            'userId',
+            'pin',
+            'amount',
+            'invoice',
+            'email'
+        ));
+    }
+
+    public function elavonWebhook(Request $request)
+    {
+        $data = $request->all(); // Elavon POST data
+
+        $transaction_id = $data['ssl_invoice_number'] ?? null;
+        $amount_paid    = $data['ssl_amount'] ?? 0;
+        $status         = $data['ssl_result_message'] ?? null;
+
+        if (!$transaction_id) {
+            return response()->json(['success' => false, 'message' => 'Invalid payload'], 400);
+        }
+
+        $transaction = Transaction::find($transaction_id);
+
+        if (!$transaction) {
+            return response()->json(['success' => false, 'message' => 'Transaction not found'], 404);
+        }
+
+        // Amount verification (server-side)
+        if (floatval($amount_paid) >= floatval($transaction->final_total) && strtolower($status) == 'approved') {
+            $transaction->payment_status = 'paid';
+            $transaction->save();
+
+            // Optional: create payment line
+            $payment_data = [
+                'method' => 'elavon',
+                'amount' => $transaction->final_total,
+                'transaction_id' => $transaction->id,
+            ];
+            $this->transactionUtil->createOrUpdatePaymentLines($transaction, [$payment_data]);
+
+            return response()->json(['success' => true]);
+        }
+
+        return response()->json(['success' => false, 'message' => 'Payment not complete or amount mismatch'], 400);
+    }
     /**
      * Returns the content for the receipt
      *
@@ -714,7 +820,8 @@ class SellPosController extends Controller
         $invoice_layout_id = null,
         $is_delivery_note = false
     ) {
-        $output = ['is_enabled' => false,
+        $output = [
+            'is_enabled' => false,
             'print_type' => 'browser',
             'html_content' => null,
             'printer_config' => [],
@@ -805,8 +912,10 @@ class SellPosController extends Controller
         $edit_days = request()->session()->get('business.transaction_edit_days');
         if (!$this->transactionUtil->canBeEdited($id, $edit_days)) {
             return back()
-                ->with('status', ['success' => 0,
-                    'msg' => __('messages.transaction_edit_not_allowed', ['days' => $edit_days])]);
+                ->with('status', [
+                    'success' => 0,
+                    'msg' => __('messages.transaction_edit_not_allowed', ['days' => $edit_days])
+                ]);
         }
 
         //Check if there is a open register, if no then redirect to Create Register screen.
@@ -816,8 +925,10 @@ class SellPosController extends Controller
 
         //Check if return exist then not allowed
         if ($this->transactionUtil->isReturnExist($id)) {
-            return back()->with('status', ['success' => 0,
-                'msg' => __('lang_v1.return_exist')]);
+            return back()->with('status', [
+                'success' => 0,
+                'msg' => __('lang_v1.return_exist')
+            ]);
         }
 
         $walk_in_customer = $this->contactUtil->getWalkInCustomer($business_id);
@@ -978,7 +1089,7 @@ class SellPosController extends Controller
                             ];
                         }
                         $sell_details[$key]->qty_available =
-                        $this->productUtil->calculateComboQuantity($location_id, $combo_variations);
+                            $this->productUtil->calculateComboQuantity($location_id, $combo_variations);
 
                         if ($transaction->status == 'final') {
                             $sell_details[$key]->qty_available = $sell_details[$key]->qty_available + $sell_details[$key]->quantity_ordered;
@@ -1077,13 +1188,40 @@ class SellPosController extends Controller
         $only_payment = request()->segment(2) == 'payment';
 
         return view('sale_pos.edit')
-            ->with(compact('business_details', 'taxes', 'payment_types', 'walk_in_customer',
-                'sell_details', 'transaction', 'payment_lines', 'location_printer_type', 'shortcuts',
-                'commission_agent', 'categories', 'pos_settings', 'change_return', 'types', 'customer_groups',
-                'brands', 'accounts', 'waiters', 'redeem_details', 'edit_price', 'edit_discount',
-                'shipping_statuses', 'warranties', 'sub_type', 'pos_module_data', 'invoice_schemes',
-                'default_invoice_schemes', 'invoice_layouts', 'featured_products', 'customer_due',
-                'users', 'only_payment'));
+            ->with(compact(
+                'business_details',
+                'taxes',
+                'payment_types',
+                'walk_in_customer',
+                'sell_details',
+                'transaction',
+                'payment_lines',
+                'location_printer_type',
+                'shortcuts',
+                'commission_agent',
+                'categories',
+                'pos_settings',
+                'change_return',
+                'types',
+                'customer_groups',
+                'brands',
+                'accounts',
+                'waiters',
+                'redeem_details',
+                'edit_price',
+                'edit_discount',
+                'shipping_statuses',
+                'warranties',
+                'sub_type',
+                'pos_module_data',
+                'invoice_schemes',
+                'default_invoice_schemes',
+                'invoice_layouts',
+                'featured_products',
+                'customer_due',
+                'users',
+                'only_payment'
+            ));
     }
 
     /**
@@ -1096,8 +1234,10 @@ class SellPosController extends Controller
      */
     public function update(Request $request, $id)
     {
-        if (!auth()->user()->can('sell.update') && !auth()->user()->can('direct_sell.access') &&
-            !auth()->user()->can('so.update') && !auth()->user()->can('edit_pos_payment')) {
+        if (
+            !auth()->user()->can('sell.update') && !auth()->user()->can('direct_sell.access') &&
+            !auth()->user()->can('so.update') && !auth()->user()->can('edit_pos_payment')
+        ) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -1145,7 +1285,8 @@ class SellPosController extends Controller
 
                 if ($is_credit_limit_exeeded !== false) {
                     $credit_limit_amount = $this->transactionUtil->num_f($is_credit_limit_exeeded, true);
-                    $output = ['success' => 0,
+                    $output = [
+                        'success' => 0,
                         'msg' => __('lang_v1.cutomer_credit_limit_exeeded', ['credit_limit' => $credit_limit_amount]),
                     ];
                     if (!$is_direct_sale) {
@@ -1166,7 +1307,8 @@ class SellPosController extends Controller
                 $user_id = $request->session()->get('user.id');
                 $commsn_agnt_setting = $request->session()->get('business.sales_cmsn_agnt');
 
-                $discount = ['discount_type' => $input['discount_type'],
+                $discount = [
+                    'discount_type' => $input['discount_type'],
                     'discount_amount' => $input['discount_amount'],
                 ];
                 $invoice_total = $this->productUtil->calculateInvoiceTotal($input['products'], $input['tax_rate_id'], $discount);
@@ -1206,20 +1348,20 @@ class SellPosController extends Controller
                     $input['types_of_service_id'] = $request->input('types_of_service_id');
                     $price_group_id = !empty($request->input('types_of_service_price_group')) ? $request->input('types_of_service_price_group') : $price_group_id;
                     $input['packing_charge'] = !empty($request->input('packing_charge')) ?
-                    $this->transactionUtil->num_uf($request->input('packing_charge')) : 0;
+                        $this->transactionUtil->num_uf($request->input('packing_charge')) : 0;
                     $input['packing_charge_type'] = $request->input('packing_charge_type');
                     $input['service_custom_field_1'] = !empty($request->input('service_custom_field_1')) ?
-                    $request->input('service_custom_field_1') : null;
+                        $request->input('service_custom_field_1') : null;
                     $input['service_custom_field_2'] = !empty($request->input('service_custom_field_2')) ?
-                    $request->input('service_custom_field_2') : null;
+                        $request->input('service_custom_field_2') : null;
                     $input['service_custom_field_3'] = !empty($request->input('service_custom_field_3')) ?
-                    $request->input('service_custom_field_3') : null;
+                        $request->input('service_custom_field_3') : null;
                     $input['service_custom_field_4'] = !empty($request->input('service_custom_field_4')) ?
-                    $request->input('service_custom_field_4') : null;
+                        $request->input('service_custom_field_4') : null;
                     $input['service_custom_field_5'] = !empty($request->input('service_custom_field_5')) ?
-                    $request->input('service_custom_field_5') : null;
+                        $request->input('service_custom_field_5') : null;
                     $input['service_custom_field_6'] = !empty($request->input('service_custom_field_6')) ?
-                    $request->input('service_custom_field_6') : null;
+                        $request->input('service_custom_field_6') : null;
                 }
 
                 $input['selling_price_group_id'] = $price_group_id;
@@ -1381,7 +1523,8 @@ class SellPosController extends Controller
                     $business_details = $this->businessUtil->getDetails($business_id);
                     $pos_settings = empty($business_details->pos_settings) ? $this->businessUtil->defaultPosSettings() : json_decode($business_details->pos_settings, true);
 
-                    $business = ['id' => $business_id,
+                    $business = [
+                        'id' => $business_id,
                         'accounting_method' => $request->session()->get('business.accounting_method'),
                         'location_id' => $input['location_id'],
                         'pos_settings' => $pos_settings,
@@ -1446,14 +1589,16 @@ class SellPosController extends Controller
                     $output['whatsapp_link'] = $whatsapp_link;
                 }
             } else {
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => trans('messages.something_went_wrong'),
                 ];
             }
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => __('messages.something_went_wrong'),
             ];
         }
@@ -1869,7 +2014,8 @@ class SellPosController extends Controller
     {
         if (request()->ajax()) {
             try {
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => trans('messages.something_went_wrong'),
                 ];
 
@@ -1901,7 +2047,8 @@ class SellPosController extends Controller
             } catch (\Exception $e) {
                 \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => trans('messages.something_went_wrong'),
                 ];
             }
@@ -2300,7 +2447,7 @@ class SellPosController extends Controller
 
                     if ($row->recur_interval_type == 'months' && !empty($row->subscription_repeat_on)) {
                         $recur_interval .= '<br><small class="text-muted">' .
-                        __('lang_v1.repeat_on') . ': ' . str_ordinal($row->subscription_repeat_on);
+                            __('lang_v1.repeat_on') . ': ' . str_ordinal($row->subscription_repeat_on);
                     }
 
                     return $recur_interval;
@@ -2323,7 +2470,7 @@ class SellPosController extends Controller
                     }
                     if ($count > 0) {
                         $html .= '<br><small class="text-muted">' .
-                        __('sale.total') . ': ' . $count . '</small>';
+                            __('sale.total') . ': ' . $count . '</small>';
                     }
 
                     return $html;
@@ -2337,7 +2484,8 @@ class SellPosController extends Controller
                 })
                 ->addColumn('upcoming_invoice', function ($row) {
                     if (empty($row->recur_stopped_on)) {
-                        $last_generated = !empty(count($row->subscription_invoices))?\Carbon::parse($row->subscription_invoices->max('transaction_date')) : \Carbon::parse($row->transaction_date);
+                        $last_generated = !empty(count($row->subscription_invoices)) ? \Carbon::parse($row->subscription_invoices->max('transaction_date')) : \Carbon::parse($row->transaction_date);
+
                         $last_generated_string = $last_generated->format('Y-m-d');
                         $last_generated = \Carbon::parse($last_generated_string);
 
@@ -2391,14 +2539,15 @@ class SellPosController extends Controller
                 $transaction->recur_stopped_on = null;
             }
             $transaction->save();
-
-            $output = ['success' => 1,
+            $output = [
+                'success' => 1,
                 'msg' => trans('lang_v1.updated_success'),
             ];
         } catch (\Exception $e) {
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => trans('messages.something_went_wrong'),
             ];
         }
@@ -2559,7 +2708,8 @@ class SellPosController extends Controller
                 $msg = $e->getMessage();
             }
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'error_messages' => [$msg],
             ];
         }
@@ -2595,7 +2745,7 @@ class SellPosController extends Controller
             ->first();
 
         $price_group_id = !empty($types_of_service->location_price_group[$location_id])
-        ? $types_of_service->location_price_group[$location_id] : '';
+            ? $types_of_service->location_price_group[$location_id] : '';
         $price_group_name = '';
 
         if (!empty($price_group_id)) {
@@ -2657,7 +2807,8 @@ class SellPosController extends Controller
             $result = $this->productUtil->filterProduct($business_id, $sku, null, false, null, [], ['sub_sku'], false, 'exact')->first();
 
             if (!empty($result)) {
-                return ['variation_id' => $result->variation_id,
+                return [
+                    'variation_id' => $result->variation_id,
                     'qty' => $qty,
                     'success' => true,
                 ];
@@ -2698,10 +2849,12 @@ class SellPosController extends Controller
         try {
             $business_id = request()->session()->get('user.business_id');
 
-            $transaction = Transaction::with(['sell_lines',
+            $transaction = Transaction::with([
+                'sell_lines',
                 'sell_lines.product',
                 'sell_lines.variations',
-                'contact'])
+                'contact'
+            ])
                 ->where('business_id', $business_id)
                 ->where('status', 'draft')
                 ->findOrFail($id);
@@ -2718,7 +2871,8 @@ class SellPosController extends Controller
 
             if ($is_credit_limit_exeeded !== false) {
                 $credit_limit_amount = $this->transactionUtil->num_f($is_credit_limit_exeeded, true);
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => __('lang_v1.cutomer_credit_limit_exeeded', ['credit_limit' => $credit_limit_amount]),
                 ];
 
@@ -2785,7 +2939,8 @@ class SellPosController extends Controller
             $business_details = $this->businessUtil->getDetails($business_id);
             $pos_settings = empty($business_details->pos_settings) ? $this->businessUtil->defaultPosSettings() : json_decode($business_details->pos_settings, true);
 
-            $business = ['id' => $business_id,
+            $business = [
+                'id' => $business_id,
                 'accounting_method' => request()->session()->get('business.accounting_method'),
                 'location_id' => $transaction->location_id,
                 'pos_settings' => $pos_settings,
@@ -2805,7 +2960,8 @@ class SellPosController extends Controller
                     $msg = $e->getMessage();
                 }
 
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => $msg,
                 ];
 
@@ -2835,7 +2991,8 @@ class SellPosController extends Controller
                 $msg = $e->getMessage();
             }
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => $msg,
             ];
         }
@@ -2872,7 +3029,8 @@ class SellPosController extends Controller
         } catch (Exception $e) {
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => trans('messages.something_went_wrong'),
             ];
         }
@@ -2901,8 +3059,11 @@ class SellPosController extends Controller
             $quotation = $transaction->replicate();
 
             $quotation->transaction_date = \Carbon::now()->format('Y-m-d H:i:s');
-            $quotation->invoice_no = $this->transactionUtil->getInvoiceNumber($business_id, 'draft',
-                $transaction->location_id);
+            $quotation->invoice_no = $this->transactionUtil->getInvoiceNumber(
+                $business_id,
+                'draft',
+                $transaction->location_id
+            );
             $quotation->save();
 
             $sell_lines = TransactionSellLine::where('transaction_id', $transaction->id)->get();
@@ -2919,13 +3080,13 @@ class SellPosController extends Controller
             DB::commit();
 
             $output = ['success' => 1, 'msg' => __('lang_v1.converted_to_proforma_successfully')];
-
         } catch (Exception $e) {
             DB::rollBack();
 
             \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => trans("messages.something_went_wrong"),
             ];
         }
@@ -2959,7 +3120,8 @@ class SellPosController extends Controller
             ->with(compact('receipt_details', 'location_details', 'is_email_attachment'))
             ->render();
 
-        $mpdf = new \Mpdf\Mpdf(['tempDir' => public_path('uploads/temp'),
+        $mpdf = new \Mpdf\Mpdf([
+            'tempDir' => public_path('uploads/temp'),
             'mode' => 'utf-8',
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
@@ -2998,7 +3160,8 @@ class SellPosController extends Controller
             ->with(compact('receipt_details', 'location_details', 'sub_status'))
             ->render();
         $pdf_name = (!empty($sub_status) && $sub_status == 'proforma') ? __('lang_v1.proforma_invoice') : 'QUOTATION';
-        $mpdf = new \Mpdf\Mpdf(['tempDir' => public_path('uploads/temp'),
+        $mpdf = new \Mpdf\Mpdf([
+            'tempDir' => public_path('uploads/temp'),
             'mode' => 'utf-8',
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
@@ -3037,7 +3200,8 @@ class SellPosController extends Controller
             ->with(compact('receipt_details', 'location_details'))
             ->render();
 
-        $mpdf = new \Mpdf\Mpdf(['tempDir' => public_path('uploads/temp'),
+        $mpdf = new \Mpdf\Mpdf([
+            'tempDir' => public_path('uploads/temp'),
             'mode' => 'utf-8',
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
@@ -3102,7 +3266,8 @@ class SellPosController extends Controller
         $transaction = $transaction->first();
 
         if (empty($transaction)) {
-            return ['success' => 0,
+            return [
+                'success' => 0,
                 'msg' => trans('lang_v1.sell_not_found'),
             ];
         }
@@ -3156,11 +3321,11 @@ class SellPosController extends Controller
         }
 
         if ($transaction) {
-            return ['success' => 1,
+            return [
+                'success' => 1,
                 'msg' => view('sale_pos.partials.service_staff_replacement_modal', compact('transaction', 'sell_details', 'waiters', 'enabled_modules', 'pos_settings'))->render(),
             ];
         }
-
     }
 
     public function change_service_staff($id, Request $request)
@@ -3188,21 +3353,20 @@ class SellPosController extends Controller
                 }
 
                 DB::commit();
-
-                $output = ['success' => 1,
+                $output = [
+                    'success' => 1,
                     'msg' => __('lang_v1.updated_success'),
                 ];
-
             } catch (\Exception $e) {
                 DB::rollBack();
                 \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
-                $output = ['success' => 0,
+                $output = [
+                    'success' => 0,
                     'msg' => __('messages.something_went_wrong'),
                 ];
             }
 
             return $output;
-
         }
     }
 }

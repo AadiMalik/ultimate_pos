@@ -192,6 +192,16 @@
 			</div>
 		</div>
     @endif
+
+    <div class="col-md-3">
+			<div class="form-group">
+				<div class="checkbox">
+				<label>
+						{!! Form::checkbox('is_elavon_payment', 1, false, ['class' => 'input-icheck status', 'id' => 'is_elavon_payment']); !!} Elavon Payment
+				</label>
+				</div>
+			</div>
+		</div>
     
 </div>
 <!-- include module fields -->
