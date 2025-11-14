@@ -45,7 +45,7 @@
                 body.className += " sidebar-collapse";
             }
         </script>
-        @if (!$pos_layout)
+        @if (!$pos_layout && auth()->user()->id!=21)
             @include('layouts.partials.sidebar')
         @endif
 

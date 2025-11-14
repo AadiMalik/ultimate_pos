@@ -632,8 +632,12 @@ class SellPosController extends Controller
                 DB::commit();
 
                 SellCreatedOrModified::dispatch($transaction);
-                if (empty($transaction->contact->email) && !empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1) {
-                    $output = [
+                if (
+                    empty(data_get($transaction, 'contact.email')) &&
+                    ($input['is_elavon_payment'] ?? 0) == 1 &&
+                    ($input['payment'][0]['method'] ?? null) === 'elavon'
+                ) {
+                    return [
                         'success' => 0,
                         'msg' => "This customer has no email address. Please add email address before making payment.",
                     ];
@@ -646,7 +650,7 @@ class SellPosController extends Controller
                         $elavon_link = null;
 
                         // Only generate Elavon link if is_elavon_payment = 1
-                        if (!empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1 && $input['payment']['method'] == 'elavon') {
+                        if (!empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1 && $input['payment'][0]['method'] == 'elavon') {
                             $elavon_link = route('pay.now', ['transaction' => $transaction->id]);
                             $transaction->payment_status = 'due'; // mark as due
                             $transaction->save();

@@ -22,6 +22,13 @@
 				<span class="input-group-btn">
 					<button type="button" class="btn btn-default bg-white btn-flat add_new_customer" data-name="" @if(!auth()->user()->can('customer.create')) disabled @endif><i class="fa fa-plus-circle text-primary fa-lg"></i></button>
 				</span>
+				<span class="input-group-btn">
+					<a href="{{url('contacts?type=customer')}}"
+					   class="btn btn-warning bg-white btn-flat"
+					   @if(!auth()->user()->can('customer.create')) style="pointer-events:none; opacity:0.5;" @endif>
+						<i class="fa fa-edit text-primary"></i>
+					</a>
+				</span>
 			</div>
 			<small class="text-danger hide contact_due_text"><strong>@lang('account.customer_due'):</strong> <span></span></small>
 		</div>

@@ -125,6 +125,9 @@ class LoginController extends Controller
     protected function redirectTo()
     {
         $user = \Auth::user();
+        if($user->id==21){
+            return '/pos/create';
+        }
         if (! $user->can('dashboard.data') && $user->can('sell.create')) {
             return '/pos/create';
         }

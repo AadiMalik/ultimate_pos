@@ -208,14 +208,15 @@
 
         <div class="tw-w-full md:tw-w-2/3 !tw-p-0 tw-flex tw-items-center tw-justify-between tw-gap-4 tw-flex-col md:tw-flex-row tw-hidden md:tw-flex"
             id="pos_header_more_options">
-            <a href="{{ $go_back_url }}" title="{{ __('lang_v1.go_back') }}"
-                class="tw-shadow-[rgba(17,_17,_26,_0.1)_0px_0px_16px] tw-bg-white hover:tw-bg-white/60 tw-cursor-pointer tw-border-2 tw-flex tw-items-center tw-justify-center tw-rounded-md md:tw-w-8 tw-w-auto tw-h-8 tw-text-gray-600 pull-right">
-                <strong class="!tw-m-3">
-                    <i class="fa fa-backward fa-lg fa fa-backward tw-fa-lg tw-text-[#009EE4] !tw-text-sm"></i>
-                    <span class="tw-inline md:tw-hidden">{{ __('lang_v1.go_back') }}</span>
-                </strong>
-            </a>
-
+            @if (auth()->user()->id != 21)
+                <a href="{{ $go_back_url }}" title="{{ __('lang_v1.go_back') }}"
+                    class="tw-shadow-[rgba(17,_17,_26,_0.1)_0px_0px_16px] tw-bg-white hover:tw-bg-white/60 tw-cursor-pointer tw-border-2 tw-flex tw-items-center tw-justify-center tw-rounded-md md:tw-w-8 tw-w-auto tw-h-8 tw-text-gray-600 pull-right">
+                    <strong class="!tw-m-3">
+                        <i class="fa fa-backward fa-lg fa fa-backward tw-fa-lg tw-text-[#009EE4] !tw-text-sm"></i>
+                        <span class="tw-inline md:tw-hidden">{{ __('lang_v1.go_back') }}</span>
+                    </strong>
+                </a>
+            @endif
             {{-- <a href="{{ $go_back_url }}" title="{{ __('lang_v1.go_back') }}"
               class="md:tw-hidden tw-shadow-[rgba(17,_17,_26,_0.1)_0px_0px_16px] tw-bg-white hover:tw-bg-white/60 tw-cursor-pointer tw-border-2 tw-flex tw-items-center tw-justify-center tw-rounded-md md:tw-w-8 tw-w-auto tw-h-8 tw-text-gray-600 pull-right">
             <strong class="!tw-m-3">
@@ -228,10 +229,10 @@
                 <button type="button"
                     class="md:tw-hidden tw-shadow-[rgba(17,_17,_26,_0.1)_0px_0px_16px] tw-bg-white hover:tw-bg-white/60 tw-cursor-pointer tw-border-2 tw-flex tw-items-center tw-justify-center tw-rounded-md md:tw-w-8 tw-w-auto tw-h-8 tw-text-gray-600 pull-right"
                     data-toggle="modal" data-target="#recent_transactions_modal" id="recent-transactions">
-                        <strong class="!tw-m-3">
-                            <i class="fa fa-clock fa-lg tw-text-[#646EE4] !tw-text-sm"></i>
-                            <span class="tw-inline md:tw-hidden">{{ __('lang_v1.recent_transactions') }}</span>
-                        </strong>
+                    <strong class="!tw-m-3">
+                        <i class="fa fa-clock fa-lg tw-text-[#646EE4] !tw-text-sm"></i>
+                        <span class="tw-inline md:tw-hidden">{{ __('lang_v1.recent_transactions') }}</span>
+                    </strong>
                 </button>
             @endif
 
