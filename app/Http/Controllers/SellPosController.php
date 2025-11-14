@@ -109,8 +109,22 @@ class SellPosController extends Controller
         $this->moduleUtil = $moduleUtil;
         $this->notificationUtil = $notificationUtil;
 
-        $this->dummyPaymentLine = ['method' => 'cash', 'amount' => 0, 'note' => '', 'card_transaction_number' => '', 'card_number' => '', 'card_type' => '', 'card_holder_name' => '', 'card_month' => '', 'card_year' => '', 'card_security' => '', 'cheque_number' => '', 'bank_account_number' => '',
-            'is_return' => 0, 'transaction_no' => ''];
+        $this->dummyPaymentLine = [
+            'method' => 'cash',
+            'amount' => 0,
+            'note' => '',
+            'card_transaction_number' => '',
+            'card_number' => '',
+            'card_type' => '',
+            'card_holder_name' => '',
+            'card_month' => '',
+            'card_year' => '',
+            'card_security' => '',
+            'cheque_number' => '',
+            'bank_account_number' => '',
+            'is_return' => 0,
+            'transaction_no' => ''
+        ];
         $this->dummyPaymentLine = [
             'method' => 'cash',
             'amount' => 0,
@@ -324,6 +338,7 @@ class SellPosController extends Controller
      */
     public function store(Request $request)
     {
+        dd($request->all());
         if (!auth()->user()->can('sell.create') && !auth()->user()->can('direct_sell.access') && !auth()->user()->can('so.create')) {
             abort(403, 'Unauthorized action.');
         }
@@ -500,7 +515,6 @@ class SellPosController extends Controller
 
                 //upload document
                 $input['document'] = $this->transactionUtil->uploadFile($request, 'sell_document', 'documents');
-
                 $transaction = $this->transactionUtil->createSellTransaction($business_id, $input, $invoice_total, $user_id);
 
                 //Upload Shipping documents
@@ -618,15 +632,21 @@ class SellPosController extends Controller
                 DB::commit();
 
                 SellCreatedOrModified::dispatch($transaction);
-
+                if (empty($transaction->contact->email) && !empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1) {
+                    $output = [
+                        'success' => 0,
+                        'msg' => "This customer has no email address. Please add email address before making payment.",
+                    ];
+                }
+                $invoice_url = $this->transactionUtil->getInvoiceUrl($transaction->id, $business_id);
                 if (!empty($transaction->contact->email)) {
                     try {
-                        $invoice_url = $this->transactionUtil->getInvoiceUrl($transaction->id, $business_id);
+
 
                         $elavon_link = null;
 
                         // Only generate Elavon link if is_elavon_payment = 1
-                        if (!empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1) {
+                        if (!empty($input['is_elavon_payment']) && $input['is_elavon_payment'] == 1 && $input['payment']['method'] == 'elavon') {
                             $elavon_link = route('pay.now', ['transaction' => $transaction->id]);
                             $transaction->payment_status = 'due'; // mark as due
                             $transaction->save();
@@ -644,6 +664,23 @@ class SellPosController extends Controller
                         \Log::error('Invoice Email Send Failed: ' . $e->getMessage());
                     }
                 }
+                if (
+                    isset($input['payment'][0]['method']) &&
+                    $input['payment'][0]['method'] == 'elavon' &&
+                    (empty($input['is_elavon_payment']) || $input['is_elavon_payment'] == 0)
+                ) {
+                    $elavon_link = $this->directPayNow($transaction->id);
+                    $transaction->payment_status = 'due'; // mark as due
+                    $transaction->save();
+                    $output = [
+                        'success' => 1,
+                        'msg' => 'Redirecting to payment',
+                        'redirect_url' => $elavon_link, // same tab
+                        'print_url' => $invoice_url . '?print_on_load=true', // new tab
+                    ];
+                    return response()->json($output);
+                }
+
                 if ($request->input('is_save_and_print') == 1) {
                     $url = $this->transactionUtil->getInvoiceUrl($transaction->id, $business_id);
 
@@ -764,6 +801,35 @@ class SellPosController extends Controller
             'email'
         ));
     }
+
+    private function directPayNow($transactionId)
+    {
+        $transaction = Transaction::findOrFail($transactionId);
+        $merchantId = env('ELAVON_MERCHANT_ID');
+        $userId = env('ELAVON_USER_ID');
+        $pin = env('ELAVON_PIN');
+        $baseUrl = env('ELAVON_MODE') === 'live'
+            ? 'https://secure.convergepay.com/hosted-payments'
+            : 'https://demo.convergepay.com/hosted-payments';
+
+        $params = http_build_query([
+            'ssl_merchant_id' => $merchantId,
+            'ssl_user_id' => $userId,
+            'ssl_pin' => $pin,
+            'ssl_transaction_type' => 'ccsale',
+            'ssl_amount' => $transaction->final_total,
+            'ssl_invoice_number' => $transaction->id,
+            'ssl_show_form' => 'true',
+            'ssl_result_format' => 'HTML',
+            'ssl_first_name' => $transaction->contact->name ?? 'Walk-In Customer',
+            'ssl_email' => $transaction->contact->email ?? 'test@example.com', // fallback email
+        ]);
+
+        return $baseUrl . '?' . $params; // redirect user
+    }
+
+
+
 
     public function elavonWebhook(Request $request)
     {
@@ -2098,7 +2164,7 @@ class SellPosController extends Controller
                 ->where('p.type', '!=', 'modifier')
                 ->where('p.is_inactive', 0)
                 ->where('p.not_for_selling', 0)
-            //Hide products not available in the selected location
+                //Hide products not available in the selected location
                 ->where(function ($q) use ($location_id) {
                     $q->where('pl.location_id', $location_id);
                 });
