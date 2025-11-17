@@ -8,7 +8,6 @@
         <div class="col-md-6 !tw-px-2" id="product_category_div">
             <div class="tw-dw-drawer tw-dw-drawer-end">
                 <input id="my-drawer-4" type="checkbox" class="tw-dw-drawer-toggle">
-                @if(auth()->user()->id!=21)
                 <div class="tw-dw-drawer-content">
                     <!-- Page content here -->
                     <label for="my-drawer-4"
@@ -20,7 +19,6 @@
                         @lang('category.category')
 					</label>
                 </div>
-                @endif
                 <div class="tw-dw-drawer-side" style="z-index: 4000">
                     <label for="my-drawer-4" aria-label="close sidebar"
                         class="tw-dw-drawer-overlay overlay-category"></label>
